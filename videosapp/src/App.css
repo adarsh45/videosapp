@@ -1,0 +1,36 @@
+.div-center {
+  text-align: center;
+}
+
+.sr-only {
+  display: none !important;
+}
+
+header {
+  background-color: #000;
+  padding: 0.2em 1em;
+  text-align: center;
+}
+
+header .heading {
+  color: #f0f0f0;
+}
+
+section .add-btn {
+  margin: 1em !important;
+}
+
+.videos-list-section {
+  width: 75%;
+  margin: auto !important;
+}
+
+.video-modal {
+  text-align: left !important;
+}
+
+@media only screen and (max-width: 768px) {
+  .videos-list-section {
+    width: 100% !important;
+  }
+}
