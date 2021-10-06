@@ -1,11 +1,11 @@
 const firebase = require("../db");
+const config = require("../config");
 // const VideoData = require("../models/VideoData");
 const firestore = firebase.firestore();
-const config = require("../config");
 const { Storage } = require("@google-cloud/storage");
 const formidable = require("formidable");
 const path = require("path");
-const { v4: uuidv4, v4 } = require("uuid");
+const { v4 } = require("uuid");
 
 // Creates a client
 const storage = new Storage({
@@ -19,6 +19,11 @@ const uploadFile = async (file, uid, filename) => {
   await bucket.upload(file.path, {
     destination: uid + "/" + filename,
   });
+};
+
+const deleteFile = async (fileName) => {
+  await bucket.file(fileName).delete();
+  console.log(`gs://${bucketName}/${fileName} deleted`);
 };
 
 const addVideo = async (req, res) => {
@@ -35,68 +40,57 @@ const addVideo = async (req, res) => {
       }
 
       const { title, description } = fields;
+      const { thumbnail, videoFile } = files;
       if (!title) return res.status(400).json({ msg: "No Title Found!" });
       if (!description)
         return res.status(400).json({ msg: "No Description Found!" });
+      if (!thumbnail)
+        return res.status(400).json({ msg: "No Thumbnail Found!" });
+      if (!videoFile)
+        return res.status(400).json({ msg: "No VideoFile Found!" });
 
+      // created uid here for using it in storage folder structure before saving data in firestore
       let uid = v4();
+      const thumbName =
+        "thumbnail." +
+        thumbnail.name.split(".")[thumbnail.name.split(".").length - 1];
+      const videoName =
+        "video." +
+        videoFile.name.split(".")[videoFile.name.split(".").length - 1];
+      uploadFile(files.thumbnail, uid, thumbName);
+      uploadFile(files.videoFile, uid, videoName);
 
-      try {
-        const thumbName =
-          "thumbnail." +
-          files.thumbnail.name.split(".")[
-            files.thumbnail.name.split(".").length - 1
-          ];
-        const videoName =
-          "video." +
-          files.videoFile.name.split(".")[
-            files.videoFile.name.split(".").length - 1
-          ];
-        uploadFile(files.thumbnail, uid, thumbName);
-        uploadFile(files.videoFile, uid, videoName);
+      let timestamp = Date.now();
+      // timestamp = firestore.FieldValue.serverTimestamp();
 
-        let timestamp = Date.now();
-
-        await firestore.collection("videos").doc(uid).set({
-          createdAt: timestamp,
-          lastUpdatedAt: timestamp,
-          title,
-          description,
-          thumbnail: thumbName,
-          videoFile: videoName,
-        });
-        res.send("VIDEO ADDED SUCCESSFULLY");
-      } catch (error) {
-        res.status(400).json({
-          error: err,
-          msg: "Error saving video",
-        });
-      }
+      await firestore.collection("videos").doc(uid).set({
+        createdAt: timestamp,
+        lastUpdatedAt: timestamp,
+        title,
+        description,
+        thumbnail: thumbName,
+        videoFile: videoName,
+      });
+      res.send("VIDEO ADDED SUCCESSFULLY");
     });
   } catch (error) {
     res.status(400).send(error.message);
   }
 };
 
-const getAllVideos = (req, res) => {
+const getAllVideos = async (req, res) => {
   try {
-    firestore
-      .collection("videos")
-      .get()
-      .then((snapshot) => {
-        let videos = snapshot.docs.map((doc) => {
-          return { id: doc.id, ...doc.data() };
-        });
-        return res.json(videos);
-      })
-      .catch((err) => {
-        res.status(400).json({
-          error: err,
-          msg: "no videos found in db!",
-        });
-      });
+    let snapshot = await firestore.collection("videos").get();
+
+    let videos = snapshot.docs.map((doc) => {
+      return { id: doc.id, ...doc.data() };
+    });
+    return res.json(videos);
   } catch (error) {
-    res.status(400).send(error.message);
+    res.status(400).json({
+      error: error.message,
+      msg: "no videos found in db!",
+    });
   }
 };
 
@@ -112,9 +106,11 @@ const updateVideo = (req, res) => {
           msg: "FormData error",
         });
       }
+
       const { id, title, description } = fields;
       const { thumbnail, videoFile } = files;
       if (!id) return res.status(400).json({ msg: "No ID Found!" });
+
       let thumbName = "",
         videoName = "";
       if (thumbnail) {
@@ -126,7 +122,6 @@ const updateVideo = (req, res) => {
       }
       if (videoFile) {
         console.log("I AM UPLOADING VIDEO");
-
         videoName =
           "video." +
           videoFile.name.split(".")[videoFile.name.split(".").length - 1];
@@ -164,7 +159,10 @@ const updateVideo = (req, res) => {
       res.send("VIDEO UPDATED SUCCESSFULLY");
     });
   } catch (error) {
-    res.status(400).send(error.message);
+    res.status(400).json({
+      error: error.message,
+      msg: "Error updating video!",
+    });
   }
 };
 
@@ -173,7 +171,7 @@ const deleteVideo = (req, res) => {
     let form = new formidable.IncomingForm();
     form.keepExtensions = true;
 
-    form.parse(req, (err, fields, file) => {
+    form.parse(req, async (err, fields, files) => {
       if (err) {
         return res.status(400).json({
           error: err,
@@ -182,22 +180,16 @@ const deleteVideo = (req, res) => {
       }
       const { id } = fields;
       if (!id) return res.status(400).json({ msg: "No ID Found!" });
-      firestore
-        .collection("videos")
-        .doc(id)
-        .delete()
-        .then(() => {
-          res.send("VIDEO DELETED SUCCESSFULLY");
-        })
-        .catch((err) => {
-          res.status(400).json({
-            error: err,
-            msg: "Error deleting video",
-          });
-        });
+
+      await firestore.collection("videos").doc(id).delete();
+
+      res.send("VIDEO DELETED SUCCESSFULLY");
     });
   } catch (error) {
-    res.status(400).send(error.message);
+    res.status(400).json({
+      error: error.message,
+      msg: "Error deleting video",
+    });
   }
 };
 
